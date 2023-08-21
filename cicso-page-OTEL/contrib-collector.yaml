@@ -1,0 +1,126 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+data:
+  config.yaml: |-
+    receivers:
+      filelog:
+        include:
+          - /var/log/pods/*/otel-collector/*.log
+      otlp:
+        protocols:
+          grpc:
+          http:
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 75
+        spike_limit_percentage: 15
+      batch:
+        send_batch_size: 10000
+        timeout: 10s
+
+
+    exporters:
+      logging:
+        #   loglevel: info
+      jaeger:
+          endpoint: "simplest-collector:14250"
+          tls:
+              insecure: true
+
+      awss3:
+        s3uploader:
+            region: 'us-east-1'
+            s3_bucket: 'k8s-opentelemetry-data'
+            s3_prefix: 'java-testing-eks'
+            s3_partition: 'hour'
+
+    service:
+      pipelines:
+        logs:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [logging,awss3]
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [logging,awss3]
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [logging,jaeger,awss3]
+
+
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: otel-collector
+  labels:
+    app: opentelemetry
+    component: otel-collector
+spec:
+  selector:
+    matchLabels:
+      app: opentelemetry
+      component: otel-collector
+  template:
+    metadata:
+      labels:
+        app: opentelemetry
+        component: otel-collector
+    spec:
+      #serviceAccountName: s3-put-sa
+      containers:
+      - name: otel-collector
+        image: otel/opentelemetry-collector-contrib:latest
+        resources:
+          limits:
+            cpu: 100m
+            memory: 200Mi
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        volumeMounts:
+        - mountPath: /var/log
+          name: varlog
+          readOnly: true
+        - mountPath: /var/lib/docker/containers
+          name: varlibdockercontainers
+          readOnly: true
+        - mountPath: /etc/otelcol-contrib/config.yaml
+          name: data
+          subPath: config.yaml
+          readOnly: true
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: varlibdockercontainers
+        hostPath:
+          path: /var/lib/docker/containers
+      - name: data
+        configMap:
+          name: otel-collector-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  labels:
+    app: opentelemetry
+    component: otel-collector
+spec:
+  ports:
+  - protocol: TCP # Default endpoint for querying metrics.
+    port: 4317
+    targetPort: 4317
+  selector:
+    component: otel-collector

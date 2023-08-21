@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: anand-petclinic
+spec:
+  selector:
+    matchLabels:
+      app: anand-petclinic
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: anand-petclinic
+      annotations:
+        sidecar.opentelemetry.io/inject: "true"
+        instrumentation.opentelemetry.io/inject-dotnet: "true"
+          #instrumentation.opentelemetry.io/inject-sdk: "true"
+          #instrumentation.opentelemetry.io/container-names: "anand"
+    spec:
+      #serviceAccountName: s3-put-sa
+      containers:
+      - name: anand
+        image: cloudzenix/sample-dotnet-app:latest
+
+
